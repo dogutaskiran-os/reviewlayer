@@ -24,7 +24,8 @@ async function request<T>(pathname: string, init: RequestInit = {}) {
   const response = await fetch(requestUrl, {
     ...init,
     cache: "no-store",
-    credentials: "include",\n    headers: { ...(init.headers || {}) },
+    credentials: "include",
+    headers: { ...(init.headers || {}) },
   });
   const responseText = await response.text();
   const data = (() => {
