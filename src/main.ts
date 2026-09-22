@@ -133,7 +133,9 @@ function renderDashboard(project: Project, projects: Project[], annotations: Ann
       ${renderCreateProjectDialog()}
       ${renderProjectSettingsDialog(project)}
     </div>`;
-  iconify();\n  bindAccountActions();\n  app.querySelector<HTMLButtonElement>("#copy-snippet")?.addEventListener("click", () => copySnippet(project));
+  iconify();
+  bindAccountActions();
+  app.querySelector<HTMLButtonElement>("#copy-snippet")?.addEventListener("click", () => copySnippet(project));
   app.querySelector<HTMLSelectElement>("#project-selector")!.addEventListener("change", (event) => {
     activeProjectId = (event.currentTarget as HTMLSelectElement).value;
     sessionStorage.setItem("annote-active-project", activeProjectId);
@@ -164,7 +166,9 @@ function renderEmptyDashboard() {
       </main>
       ${renderCreateProjectDialog()}
     </div>`;
-  iconify();\n  bindAccountActions();\n  app.querySelector<HTMLButtonElement>("#new-project")!.addEventListener("click", openCreateProjectDialog);
+  iconify();
+  bindAccountActions();
+  app.querySelector<HTMLButtonElement>("#new-project")!.addEventListener("click", openCreateProjectDialog);
   app.querySelector<HTMLButtonElement>("#first-project-action")!.addEventListener("click", openCreateProjectDialog);
   bindCreateProjectDialog();
 }
