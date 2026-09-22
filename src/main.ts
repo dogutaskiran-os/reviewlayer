@@ -24,7 +24,7 @@ async function request<T>(pathname: string, init: RequestInit = {}) {
   const response = await fetch(requestUrl, {
     ...init,
     cache: "no-store",
-    headers: { "X-Annote-Admin-Key": dashboardKey, ...(init.headers || {}) },
+    credentials: "include",\n    headers: { ...(init.headers || {}) },
   });
   const responseText = await response.text();
   const data = (() => {
@@ -40,30 +40,59 @@ async function request<T>(pathname: string, init: RequestInit = {}) {
   return data as T;
 }
 
-function showUnlock(error = "") {
+function showAuth(error = "") {
   app.innerHTML = `
     <main class="unlock-page">
-      <section class="unlock-panel" aria-labelledby="unlock-title">
+      <section class="unlock-panel auth-panel" aria-labelledby="auth-title">
         <div class="mark"><i data-lucide="message-square"></i></div>
-        <p class="eyebrow">Annote</p>
-        <h1 id="unlock-title">Open your feedback inbox</h1>
-        <p class="subtle">Enter the dashboard key configured on your self-hosted server.</p>
-        <form id="unlock-dashboard">
-          <label for="dashboard-key">Dashboard key</label>
-          <input id="dashboard-key" name="key" type="password" required autofocus />
-          <p class="form-error" ${error ? "" : "hidden"}>${error}</p>
-          <button class="button primary full" type="submit"><i data-lucide="lock-keyhole"></i>Open inbox</button>
-        </form>
-        <p class="footnote">${window.location.port === "5173" ? "Local starter key: <code>annote-local</code>" : "Your dashboard key is stored only for this browser session."}</p>
+        <p class="eyebrow">ReviewLayer</p>
+        <h1 id="auth-title">Client feedback, without the email archaeology.</h1>
+        <p class="subtle">Sign in, or start a 14-day workspace. No card required.</p>
+        <div class="auth-grid">
+          <form id="login-form">
+            <h2>Sign in</h2>
+            <label>Email<input name="email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="button primary full" type="submit">Sign in</button>
+          </form>
+          <form id="signup-form">
+            <h2>Start free</h2>
+            <label>Name<input name="name" autocomplete="name" required /></label>
+            <label>Work email<input name="email" type="email" autocomplete="email" required /></label>
+            <label>Password<input name="password" type="password" minlength="8" autocomplete="new-password" required /></label>
+            <button class="button primary full" type="submit">Create workspace</button>
+          </form>
+        </div>
+        <p class="form-error" id="auth-error" ${error ? "" : "hidden"}>${escapeHtml(error)}</p>
       </section>
     </main>`;
   iconify();
-  app.querySelector<HTMLFormElement>("#unlock-dashboard")!.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    dashboardKey = String(new FormData(event.currentTarget as HTMLFormElement).get("key") || "");
-    sessionStorage.setItem("annote-dashboard-key", dashboardKey);
-    await loadDashboard();
-  });
+  const authError = app.querySelector<HTMLElement>("#auth-error")!;
+  const submitAuth = async (form: HTMLFormElement, pathname: string) => {
+    const values = new FormData(form);
+    authError.hidden = true;
+    try {
+      await request(pathname, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(values.entries())) });
+      await loadDashboard();
+    } catch (caught) {
+      authError.textContent = caught instanceof Error ? caught.message : "Could not sign in.";
+      authError.hidden = false;
+    }
+  };
+  app.querySelector<HTMLFormElement>("#login-form")!.addEventListener("submit", (event) => { event.preventDefault(); submitAuth(event.currentTarget as HTMLFormElement, "/api/auth/login"); });
+  app.querySelector<HTMLFormElement>("#signup-form")!.addEventListener("submit", (event) => { event.preventDefault(); submitAuth(event.currentTarget as HTMLFormElement, "/api/auth/signup"); });
+}
+
+async function logout() {
+  await request("/api/auth/logout", { method: "POST" });
+  sessionStorage.removeItem("annote-active-project");
+  activeProject = null;
+  activeProjectId = "";
+  showAuth();
+}
+
+function bindAccountActions() {
+  app.querySelector<HTMLButtonElement>("#logout")?.addEventListener("click", logout);
 }
 
 function embedSnippet(project: Project) {
@@ -84,9 +113,9 @@ function renderDashboard(project: Project, projects: Project[], annotations: Ann
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
-        <a class="brand" href="/dashboard.html"><span class="brand-mark"><i data-lucide="message-square"></i></span><span>Annote</span></a>
+        <a class="brand" href="/dashboard.html"><span class="brand-mark"><i data-lucide="message-square"></i></span><span>ReviewLayer</span></a>
         <nav aria-label="Primary navigation"><a class="nav-item ${view === "feedback" ? "active" : ""}" href="#feedback"><i data-lucide="message-square"></i>Feedback <span>${open.length}</span></a><a class="nav-item ${view === "setup" ? "active" : ""}" href="#setup"><i data-lucide="settings-2"></i>Setup</a></nav>
-        <div class="sidebar-foot"><span class="status-dot"></span>Self-hosted</div>
+        <div class="sidebar-foot"><span><span class="status-dot"></span>Online</span><button class="logout-link" id="logout">Sign out</button></div>
       </aside>
       <main class="workspace">
         <header class="topbar">
@@ -103,8 +132,7 @@ function renderDashboard(project: Project, projects: Project[], annotations: Ann
       ${renderCreateProjectDialog()}
       ${renderProjectSettingsDialog(project)}
     </div>`;
-  iconify();
-  app.querySelector<HTMLButtonElement>("#copy-snippet")?.addEventListener("click", () => copySnippet(project));
+  iconify();\n  bindAccountActions();\n  app.querySelector<HTMLButtonElement>("#copy-snippet")?.addEventListener("click", () => copySnippet(project));
   app.querySelector<HTMLSelectElement>("#project-selector")!.addEventListener("change", (event) => {
     activeProjectId = (event.currentTarget as HTMLSelectElement).value;
     sessionStorage.setItem("annote-active-project", activeProjectId);
@@ -123,20 +151,19 @@ function renderEmptyDashboard() {
   app.innerHTML = `
     <div class="shell">
       <aside class="sidebar">
-        <a class="brand" href="/dashboard.html"><span class="brand-mark"><i data-lucide="message-square"></i></span><span>Annote</span></a>
-        <div class="sidebar-foot"><span class="status-dot"></span>Self-hosted</div>
+        <a class="brand" href="/dashboard.html"><span class="brand-mark"><i data-lucide="message-square"></i></span><span>ReviewLayer</span></a>
+        <div class="sidebar-foot"><span><span class="status-dot"></span>Online</span><button class="logout-link" id="logout">Sign out</button></div>
       </aside>
       <main class="workspace">
         <header class="topbar">
           <div><p class="eyebrow">Client reviews</p><h1>Start your first review</h1></div>
           <div class="top-actions"><button class="button primary icon-text" id="new-project"><i data-lucide="plus"></i>New project</button></div>
         </header>
-        <section class="first-project" aria-labelledby="first-project-title"><span class="empty-icon"><i data-lucide="message-square"></i></span><div><h2 id="first-project-title">Give feedback a home.</h2><p>Create a client review, add the exact preview URL, then paste Annote's small script into their website.</p><button class="button secondary icon-text" id="first-project-action"><i data-lucide="plus"></i>Create first project</button></div></section>
+        <section class="first-project" aria-labelledby="first-project-title"><span class="empty-icon"><i data-lucide="message-square"></i></span><div><h2 id="first-project-title">Give feedback a home.</h2><p>Create a client review, add the exact preview URL, then paste ReviewLayer's small script into their website.</p><button class="button secondary icon-text" id="first-project-action"><i data-lucide="plus"></i>Create first project</button></div></section>
       </main>
       ${renderCreateProjectDialog()}
     </div>`;
-  iconify();
-  app.querySelector<HTMLButtonElement>("#new-project")!.addEventListener("click", openCreateProjectDialog);
+  iconify();\n  bindAccountActions();\n  app.querySelector<HTMLButtonElement>("#new-project")!.addEventListener("click", openCreateProjectDialog);
   app.querySelector<HTMLButtonElement>("#first-project-action")!.addEventListener("click", openCreateProjectDialog);
   bindCreateProjectDialog();
 }
@@ -255,7 +282,7 @@ function renderFeedbackView(annotations: Annotation[], open: Annotation[], resol
 }
 
 function renderSetupView(project: Project) {
-  return `<section class="setup-section"><div><p class="eyebrow">Install anywhere</p><h2>One script, any website.</h2><p>Load the widget from your Annote server, then mount it with this review ID. It works on a static site, CMS theme, React app, Laravel project, or any page that can load JavaScript.</p><a class="button secondary icon-text" href="/demo.html" target="_blank"><i data-lucide="external-link"></i>Open example</a></div><pre><code>${escapeHtml(embedSnippet(project))}</code></pre></section>`;
+  return `<section class="setup-section"><div><p class="eyebrow">Install anywhere</p><h2>One script, any website.</h2><p>Load the widget from your ReviewLayer workspace, then mount it with this review ID. It works on a static site, CMS theme, React app, Laravel project, or any page that can load JavaScript.</p><a class="button secondary icon-text" href="/demo.html" target="_blank"><i data-lucide="external-link"></i>Open example</a></div><pre><code>${escapeHtml(embedSnippet(project))}</code></pre></section>`;
 }
 
 function annotationRow(annotation: Annotation, number: number) {
@@ -336,15 +363,12 @@ async function loadDashboard() {
     renderDashboard(activeProject, projects, annotations);
   } catch (caught) {
     if (caught instanceof ApiError && caught.status === 401) {
-      sessionStorage.removeItem("annote-dashboard-key");
-      dashboardKey = "";
+      showAuth();
+      return;
     }
-    showUnlock(caught instanceof Error ? caught.message : "Could not open the feedback inbox.");
+    showAuth(caught instanceof Error ? caught.message : "Could not open the feedback inbox.");
   }
 }
 
-showUnlock();
-if (dashboardKey) loadDashboard();
-window.addEventListener("hashchange", () => {
-  if (dashboardKey) loadDashboard();
-});
+loadDashboard();
+window.addEventListener("hashchange", () => loadDashboard());
